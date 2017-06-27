@@ -17,6 +17,11 @@ struct player {
 	sf::Vector2i position = sf::Vector2i(0, 0);
 };
 
+bool is_arrow(sf::Keyboard::Key key) {
+	// Left is 71, Down is 74
+	return key >= sf::Keyboard::Left && key <= sf::Keyboard::Down;
+}
+
 void start_server() {
 	// Create a listener for connections
 	sf::TcpListener listener;
@@ -34,8 +39,14 @@ void start_server() {
 			cout << "connected\n";
 			// Send him his ID
 			sf::Packet packet;
-			packet << static_cast<int>(clients.size());
+			int id = static_cast<int>(clients.size());
+			packet << id;
 			client.socket->send(packet);
+			// Send everyone else data that a new player connected
+			packet << 0 << 0;
+			for (player p : clients) {
+				p.socket->send(packet);
+			}
 			// Add him to the list of players
 			client.socket->setBlocking(false);
 			clients.push_back(client);
@@ -48,9 +59,7 @@ void start_server() {
 				clients[id].position = sf::Vector2i(x, y);
 				cout << "player " << id << " is now at " << clients[id].position.x << "," << clients[id].position.y << "\n";
 				packet.clear();
-				for (player p : clients) {
-					packet << p.position.x << p.position.y;
-				}
+				packet << id << x << y;
 				for (player p : clients) {
 					p.socket->send(packet);
 				}
@@ -79,13 +88,22 @@ int main() {
 	vector<player> players;
 	// Keep showing the window and checking for events
 	while (window.isOpen()) {
+		// Handle events
 		sf::Event event;
 		while (window.pollEvent(event)) {
 			switch (event.type) {
+			// If the window was closed, close the window
 			case sf::Event::Closed: window.close(); break;
 			case sf::Event::KeyPressed:
-				if (event.key.code == sf::Keyboard::Left) {
-					you.position.x--;
+				// If an arrow key was pressed, move the character
+				switch (event.key.code) {
+				case sf::Keyboard::Left: you.position.x--; break;
+				case sf::Keyboard::Right: you.position.x++; break;
+				case sf::Keyboard::Up: you.position.y--; break;
+				case sf::Keyboard::Down: you.position.y++; break;
+				}
+				// And send it to the server
+				if (is_arrow(event.key.code)) {
 					packet.clear();
 					packet << id << you.position.x << you.position.y;
 					you.socket->send(packet);
@@ -93,15 +111,16 @@ int main() {
 			break;
 			}
 		}
+		// If you receive data from the server
 		if (you.socket->receive(packet) == sf::Socket::Done) {
-			int x, y;
-			while (packet >> x >> y) {
-				players.push_back({ nullptr, {x, y} });
-			}
+			int id, x, y;
+			packet >> id >> x >> y;
+			if (players.size() <= id) players.push_back({ nullptr, {x, y} });
+			else players[id].position = sf::Vector2i(x, y);
 		}
 		window.clear();
 		for (player p : players) {
-			sf::CircleShape c(30);
+			sf::CircleShape c(10);
 			c.setFillColor(sf::Color::Red);
 			c.setPosition(sf::Vector2f(p.position));
 			window.draw(c);
