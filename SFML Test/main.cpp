@@ -76,7 +76,7 @@ int main() {
 	server.detach();
 	// Create a connection to the server
 	player you;
-	you.socket->connect("localhost", PORT);
+	you.socket->connect("192.168.1.48", PORT);
 	// Get your ID from the server
 	sf::Packet packet;
 	int id;
