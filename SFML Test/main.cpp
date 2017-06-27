@@ -8,13 +8,18 @@
 #include <memory>
 #include <string>
 #include <sstream>
+#include <cmath>
 
 #define PORT 42069
 using namespace std;
 
 struct player {
-	sf::TcpSocket* socket = new sf::TcpSocket;
 	sf::Vector2i position = sf::Vector2i(0, 0);
+	int direction;
+};
+
+struct client : player {
+	sf::TcpSocket* socket = new sf::TcpSocket;
 };
 
 bool is_arrow(sf::Keyboard::Key key) {
@@ -30,37 +35,38 @@ void start_server() {
 	// Be able to accept clients and data
 	listener.setBlocking(false);
 	// The list of clients
-	vector<player> clients;
+	vector<client> clients;
 	// Keep listening for new connections and data
 	while (true) {
-		player client;
+		client player;
 		// If you received a new player
-		if (listener.accept(*client.socket) == sf::Socket::Done) {
+		if (listener.accept(*player.socket) == sf::Socket::Done) {
 			cout << "connected\n";
 			// Send him his ID
 			sf::Packet packet;
 			int id = static_cast<int>(clients.size());
 			packet << id;
-			client.socket->send(packet);
+			player.socket->send(packet);
 			// Send everyone else data that a new player connected
 			packet << 0 << 0;
-			for (player p : clients) {
+			for (client p : clients) {
 				p.socket->send(packet);
 			}
 			// Add him to the list of players
-			client.socket->setBlocking(false);
-			clients.push_back(client);
+			player.socket->setBlocking(false);
+			clients.push_back(player);
 		}
-		for (auto client : clients) {
+		for (auto player : clients) {
 			sf::Packet packet;
-			if (client.socket->receive(packet) == sf::Socket::Done) {
-				int id, x, y;
-				packet >> id >> x >> y;
+			if (player.socket->receive(packet) == sf::Socket::Done) {
+				int id, x, y, dir;
+				packet >> id >> x >> y >> dir;
 				clients[id].position = sf::Vector2i(x, y);
-				cout << "player " << id << " is now at " << clients[id].position.x << "," << clients[id].position.y << "\n";
+				clients[id].direction = dir;
+				cout << "player " << id << " is now at " << clients[id].position.x << "," << clients[id].position.y << " facing: " << clients[id].direction << "\n";
 				packet.clear();
-				packet << id << x << y;
-				for (player p : clients) {
+				packet << id << x << y << dir;
+				for (client p : clients) {
 					p.socket->send(packet);
 				}
 			}
@@ -75,7 +81,7 @@ int main() {
 	thread server(start_server);
 	server.detach();
 	// Create a connection to the server
-	player you;
+	client you;
 	you.socket->connect("192.168.1.48", PORT);
 	// Get your ID from the server
 	sf::Packet packet;
@@ -102,28 +108,35 @@ int main() {
 				case sf::Keyboard::Up: you.position.y--; break;
 				case sf::Keyboard::Down: you.position.y++; break;
 				}
-				// And send it to the server
-				if (is_arrow(event.key.code)) {
-					packet.clear();
-					packet << id << you.position.x << you.position.y;
-					you.socket->send(packet);
-				}
-			break;
+			// Fallthrough because you should be doing this anyway
+			case sf::Event::MouseMoved:
+				sf::Vector2i pos = sf::Mouse::getPosition(window);
+				double dir = (atan2(you.position.y - pos.y, you.position.x - pos.x)) * 180 / 3.141592;
+				you.direction = dir;
+				packet.clear();
+				packet << id << you.position.x << you.position.y << you.direction;
+				you.socket->send(packet);
+				break;
 			}
 		}
 		// If you receive data from the server
 		if (you.socket->receive(packet) == sf::Socket::Done) {
-			int id, x, y;
-			packet >> id >> x >> y;
-			if (players.size() <= id) players.push_back({ nullptr, {x, y} });
-			else players[id].position = sf::Vector2i(x, y);
+			int id, x, y, dir;
+			packet >> id >> x >> y >> dir;
+			if (players.size() <= id) players.push_back({ {x, y}, dir });
+			else {
+				players[id].position = sf::Vector2i(x, y);
+				players[id].direction = dir;
+			}
 		}
 		window.clear();
 		for (player p : players) {
-			sf::CircleShape c(10);
-			c.setFillColor(sf::Color::Red);
-			c.setPosition(sf::Vector2f(p.position));
-			window.draw(c);
+			sf::RectangleShape r(sf::Vector2f(20, 10));
+			r.setOrigin(10, 5);
+			r.setFillColor(sf::Color::Red);
+			r.setPosition(sf::Vector2f(p.position));
+			r.setRotation(p.direction);
+			window.draw(r);
 		}
 		window.display();
 	}
