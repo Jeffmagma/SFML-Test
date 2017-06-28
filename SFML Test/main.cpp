@@ -21,6 +21,11 @@ bool is_arrow(sf::Keyboard::Key key) {
 	return key >= sf::Keyboard::Left && key <= sf::Keyboard::Down;
 }
 
+template <class t>
+ostream& operator<<(ostream& o, sf::Vector2<t> v) {
+	return o << '[' << v.x << ", " << v.y << ']';
+}
+
 void start_server() {
 	// Create a listener for connections
 	sf::TcpListener listener;
@@ -56,7 +61,7 @@ void start_server() {
 				int id;
 				packet >> id;
 				packet >> clients[id];
-				cout << "player " << id << " is now at " << clients[id].position.x << "," << clients[id].position.y << " facing: " << clients[id].direction << "\n";
+				cout << "player " << id << " is now at " << clients[id].position << " facing: " << clients[id].direction << "\n";
 				for (client p : clients) {
 					p.socket->send(packet);
 				}
@@ -84,6 +89,8 @@ int main() {
 	you.socket->setBlocking(false);
 	vector<player> players;
 	vector<bullet> bullets;
+	bool pressed = false;
+	unsigned long long tick = 0;
 	// Keep showing the window and checking for events
 	while (window.isOpen()) {
 		// Handle events
@@ -113,10 +120,15 @@ int main() {
 				you.socket->send(packet); }
 				break;
 			case sf::Event::MouseButtonPressed:
-				bullets.push_back(bullet(you.position, you.direction));
+				pressed = true;
+				break;
+			case sf::Event::MouseButtonReleased:
+				pressed = false;
 				break;
 			}
 		}
+		tick++;
+		if (pressed && tick % 20 == 0) bullets.push_back(bullet(you.position, you.direction));
 		// If you receive data from the server
 		if (you.socket->receive(packet) == sf::Socket::Done) {
 			// Get the ID of the updated player
@@ -137,13 +149,18 @@ int main() {
 			r.setRotation(p.direction);
 			window.draw(r);
 		}
-		for (bullet& b : bullets) {
+		for (int i = 0; i < bullets.size();) {
+			bullet& b = bullets[i];
 			b.tick();
-			sf::CircleShape c(2);
-			c.setOrigin(1, 1);
-			c.setFillColor(sf::Color::Yellow);
-			c.setPosition(b.position);
-			window.draw(c);
+			if (b.position.x < 0 || b.position.y < 0 || b.position.x > 800 || b.position.y > 600) bullets.erase(bullets.begin() + i);
+			else {
+				sf::CircleShape c(2);
+				c.setOrigin(1, 1);
+				c.setFillColor(sf::Color::Yellow);
+				c.setPosition(b.position);
+				window.draw(c);
+				i++;
+			}
 		}
 		window.display();
 	}
